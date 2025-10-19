@@ -11,6 +11,8 @@ const Workspace = () => {
   const { apiKey, clearApiKey } = useApiKey();
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
+  const [currentCode, setCurrentCode] = useState<string>('');
+  const [currentFilename, setCurrentFilename] = useState<string>('');
 
   // Redirect if no API key
   if (!apiKey) {
@@ -22,6 +24,15 @@ const Workspace = () => {
     clearApiKey();
     toast.success('تم تسجيل الخروج بنجاح');
     navigate('/');
+  };
+
+  const handleCodeGenerated = (code: string, filename: string) => {
+    setCurrentCode(code);
+    setCurrentFilename(filename);
+  };
+
+  const handleCodeChange = (newCode: string) => {
+    setCurrentCode(newCode);
   };
 
   return (
@@ -75,12 +86,17 @@ const Workspace = () => {
       <div className="flex-1 flex overflow-hidden">
         {/* Chat Panel - Left */}
         <div className="w-full md:w-1/2 border-l border-border">
-          <ChatPanel />
+          <ChatPanel onCodeGenerated={handleCodeGenerated} />
         </div>
 
         {/* Preview Panel - Right */}
         <div className="hidden md:block w-1/2">
-          <PreviewPanel viewMode={viewMode} />
+          <PreviewPanel 
+            viewMode={viewMode}
+            currentCode={currentCode}
+            currentFilename={currentFilename}
+            onCodeChange={handleCodeChange}
+          />
         </div>
       </div>
     </div>

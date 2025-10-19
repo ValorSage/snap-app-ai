@@ -4,20 +4,27 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Send, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  code?: string;
+  filename?: string;
 }
 
-const ChatPanel = () => {
+interface ChatPanelProps {
+  onCodeGenerated?: (code: string, filename: string) => void;
+}
+
+const ChatPanel = ({ onCodeGenerated }: ChatPanelProps) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
       role: 'assistant',
-      content: 'مرحباً! أنا هنا لمساعدتك في بناء تطبيقك. صف لي فكرتك أو اختر من القوالب الجاهزة.',
+      content: 'مرحباً! أنا هنا لمساعدتك في بناء تطبيقك. صف لي فكرتك وسأنشئ لك الكود.\n\nأمثلة:\n• أنشئ صفحة ترحيب بسيطة\n• اصنع صفحة تسجيل دخول\n• غير لون الخلفية إلى أزرق',
       timestamp: new Date(),
     },
   ]);
@@ -35,20 +42,59 @@ const ChatPanel = () => {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const currentInput = input;
     setInput('');
     setIsLoading(true);
 
-    // Simulate AI response (we'll connect to Gemini API later)
-    setTimeout(() => {
+    try {
+      // Prepare conversation history (last 10 messages for context)
+      const conversationHistory = messages.slice(-10).map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
+
+      const { data, error } = await supabase.functions.invoke('gemini-chat', {
+        body: {
+          message: currentInput,
+          conversationHistory
+        }
+      });
+
+      if (error) throw error;
+
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: 'شكراً على فكرتك! سأبدأ بتجهيز بيئة العمل وإنشاء الملفات الأساسية. لإكمال هذه الوظيفة، سنحتاج لربط المنصة بخدمة Lovable Cloud لتشغيل الذكاء الاصطناعي بشكل آمن.',
+        content: data.message || 'تم إنشاء الكود!',
+        timestamp: new Date(),
+        code: data.code,
+        filename: data.filename
+      };
+
+      setMessages((prev) => [...prev, aiMessage]);
+
+      // If code was generated, notify parent
+      if (data.code && data.filename && onCodeGenerated) {
+        onCodeGenerated(data.code, data.filename);
+      }
+
+      if (data.code) {
+        toast.success('تم إنشاء الكود بنجاح!');
+      }
+
+    } catch (error) {
+      console.error('Error calling AI:', error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: 'عذراً، حدث خطأ. يرجى المحاولة مرة أخرى.',
         timestamp: new Date(),
       };
-      setMessages((prev) => [...prev, aiMessage]);
+      setMessages((prev) => [...prev, errorMessage]);
+      toast.error('حدث خطأ في الاتصال بالذكاء الاصطناعي');
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
