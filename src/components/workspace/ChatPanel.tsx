@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -13,6 +13,13 @@ interface Message {
   timestamp: Date;
   code?: string;
   filename?: string;
+}
+
+interface ProjectState {
+  file_structure: { name: string; content: string }[];
+  technologies: string[];
+  installed_libraries: string[];
+  metadata: Record<string, any>;
 }
 
 interface ChatPanelProps {
@@ -30,6 +37,67 @@ const ChatPanel = ({ onCodeGenerated }: ChatPanelProps) => {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [projectState, setProjectState] = useState<ProjectState>({
+    file_structure: [],
+    technologies: ['HTML', 'CSS', 'JavaScript', 'Tailwind CSS'],
+    installed_libraries: [],
+    metadata: {}
+  });
+
+  // Load project state on mount
+  useEffect(() => {
+    loadProjectState();
+  }, []);
+
+  const loadProjectState = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('project_states')
+        .select('*')
+        .eq('project_id', 'default')
+        .single();
+
+      if (data && !error) {
+        setProjectState({
+          file_structure: (data.file_structure as { name: string; content: string }[]) || [],
+          technologies: (data.technologies as string[]) || ['HTML', 'CSS', 'JavaScript', 'Tailwind CSS'],
+          installed_libraries: (data.installed_libraries as string[]) || [],
+          metadata: (data.metadata as Record<string, any>) || {}
+        });
+      }
+    } catch (error) {
+      console.error('Error loading project state:', error);
+    }
+  };
+
+  const updateProjectState = async (newFile?: { name: string; content: string }) => {
+    try {
+      const updatedState = { ...projectState };
+      
+      if (newFile) {
+        // Update or add file to structure
+        const fileIndex = updatedState.file_structure.findIndex(f => f.name === newFile.name);
+        if (fileIndex >= 0) {
+          updatedState.file_structure[fileIndex] = newFile;
+        } else {
+          updatedState.file_structure.push(newFile);
+        }
+      }
+
+      const { error } = await supabase
+        .from('project_states')
+        .upsert({
+          project_id: 'default',
+          ...updatedState
+        });
+
+      if (!error) {
+        setProjectState(updatedState);
+      }
+    } catch (error) {
+      console.error('Error updating project state:', error);
+    }
+  };
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -56,7 +124,8 @@ const ChatPanel = ({ onCodeGenerated }: ChatPanelProps) => {
       const { data, error } = await supabase.functions.invoke('gemini-chat', {
         body: {
           message: currentInput,
-          conversationHistory
+          conversationHistory,
+          projectState
         }
       });
 
@@ -73,9 +142,10 @@ const ChatPanel = ({ onCodeGenerated }: ChatPanelProps) => {
 
       setMessages((prev) => [...prev, aiMessage]);
 
-      // If code was generated, notify parent
+      // If code was generated, notify parent and update project state
       if (data.code && data.filename && onCodeGenerated) {
         onCodeGenerated(data.code, data.filename);
+        await updateProjectState({ name: data.filename, content: data.code });
       }
 
       if (data.code) {

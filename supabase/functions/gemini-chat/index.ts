@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -33,7 +34,12 @@ serve(async (req) => {
   }
 
   try {
-    const { message, conversationHistory } = await req.json();
+    const { message, conversationHistory, projectState } = await req.json();
+    
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
     
     const GOOGLE_GEMINI_API_KEY = Deno.env.get('GOOGLE_GEMINI_API_KEY');
     if (!GOOGLE_GEMINI_API_KEY) {
@@ -42,9 +48,37 @@ serve(async (req) => {
 
     console.log('Received message:', message);
 
+    // Load or create project state
+    let currentProjectState = projectState;
+    if (!currentProjectState) {
+      const { data: existingState } = await supabase
+        .from('project_states')
+        .select('*')
+        .eq('project_id', 'default')
+        .single();
+      
+      currentProjectState = existingState || {
+        file_structure: [],
+        technologies: ['HTML', 'CSS', 'JavaScript', 'Tailwind CSS'],
+        installed_libraries: [],
+        metadata: {}
+      };
+    }
+
+    // Build enhanced system prompt with project context
+    const enhancedSystemPrompt = `${SYSTEM_PROMPT}
+
+السياق الحالي للمشروع:
+- التقنيات المستخدمة: ${currentProjectState.technologies?.join(', ') || 'HTML, CSS, JavaScript, Tailwind CSS'}
+- المكتبات المثبتة: ${currentProjectState.installed_libraries?.join(', ') || 'لا توجد'}
+- عدد الملفات: ${currentProjectState.file_structure?.length || 0}
+${currentProjectState.file_structure?.length > 0 ? `- الملفات الموجودة: ${currentProjectState.file_structure.map((f: any) => f.name).join(', ')}` : ''}
+
+استخدم هذا السياق لفهم حالة المشروع الحالية وتقديم إجابات أكثر دقة.`;
+
     // Build conversation messages
     const messages = [
-      { role: "user", parts: [{ text: SYSTEM_PROMPT }] }
+      { role: "user", parts: [{ text: enhancedSystemPrompt }] }
     ];
 
     // Add conversation history
