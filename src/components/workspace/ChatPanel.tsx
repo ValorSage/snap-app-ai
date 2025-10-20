@@ -51,11 +51,14 @@ const ChatPanel = ({ onCodeGenerated }: ChatPanelProps) => {
 
   const loadProjectState = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { data, error } = await supabase
         .from('project_states')
         .select('*')
-        .eq('project_id', 'default')
-        .single();
+        .eq('user_id', user.id)
+        .maybeSingle();
 
       if (data && !error) {
         setProjectState({
@@ -72,6 +75,9 @@ const ChatPanel = ({ onCodeGenerated }: ChatPanelProps) => {
 
   const updateProjectState = async (newFile?: { name: string; content: string }) => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const updatedState = { ...projectState };
       
       if (newFile) {
@@ -87,7 +93,8 @@ const ChatPanel = ({ onCodeGenerated }: ChatPanelProps) => {
       const { error } = await supabase
         .from('project_states')
         .upsert({
-          project_id: 'default',
+          user_id: user.id,
+          project_id: user.id,
           ...updatedState
         });
 

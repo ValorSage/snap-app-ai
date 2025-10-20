@@ -1,27 +1,46 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { useApiKey } from '@/contexts/ApiKeyContext';
 import ChatPanel from '@/components/workspace/ChatPanel';
 import PreviewPanel from '@/components/workspace/PreviewPanel';
 import { LogOut, Code2, Eye } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import type { User } from '@supabase/supabase-js';
 
 const Workspace = () => {
-  const { apiKey, clearApiKey } = useApiKey();
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
   const [currentCode, setCurrentCode] = useState<string>('');
   const [currentFilename, setCurrentFilename] = useState<string>('');
+  const [user, setUser] = useState<User | null>(null);
 
-  // Redirect if no API key
-  if (!apiKey) {
-    navigate('/');
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session?.user) {
+        navigate('/auth');
+      } else {
+        setUser(session.user);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        navigate('/auth');
+      } else {
+        setUser(session.user);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  if (!user) {
     return null;
   }
 
-  const handleLogout = () => {
-    clearApiKey();
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     toast.success('تم تسجيل الخروج بنجاح');
     navigate('/');
   };

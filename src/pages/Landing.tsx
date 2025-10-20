@@ -1,27 +1,32 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { useApiKey } from '@/contexts/ApiKeyContext';
 import { Sparkles, Code2, Zap } from 'lucide-react';
-import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import type { User } from '@supabase/supabase-js';
 
 const Landing = () => {
-  const [key, setKey] = useState('');
-  const { setApiKey } = useApiKey();
   const navigate = useNavigate();
+  const [user, setUser] = useState<User | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!key.trim()) {
-      toast.error('يرجى إدخال مفتاح API');
-      return;
-    }
-    setApiKey(key);
-    toast.success('تم حفظ مفتاح API بنجاح');
-    navigate('/workspace');
-  };
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        navigate('/workspace');
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        navigate('/workspace');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
@@ -68,52 +73,25 @@ const Landing = () => {
           </Card>
         </div>
 
-        {/* API Key Input */}
+        {/* CTA Button */}
         <Card className="w-full max-w-md p-8 bg-card/80 backdrop-blur-md border-primary/30 shadow-elevated animate-in fade-in zoom-in-95 duration-700 delay-500">
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-6">
             <div className="text-center space-y-2">
               <h2 className="text-2xl font-semibold">ابدأ الآن</h2>
               <p className="text-sm text-muted-foreground">
-                أدخل مفتاح Google Gemini API الخاص بك للبدء
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Input
-                type="password"
-                placeholder="أدخل مفتاح API هنا..."
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                className="bg-input border-border focus:border-primary focus:ring-primary text-right"
-                dir="ltr"
-              />
-              <p className="text-xs text-muted-foreground text-right">
-                يمكنك الحصول على مفتاح API من{' '}
-                <a 
-                  href="https://ai.google.dev/" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  Google AI Studio
-                </a>
+                ابدأ رحلتك في بناء التطبيقات بالذكاء الاصطناعي
               </p>
             </div>
 
             <Button 
-              type="submit" 
+              onClick={() => navigate('/auth')}
               className="w-full bg-gradient-primary hover:shadow-glow transition-all duration-300 text-lg py-6"
             >
               <Sparkles className="w-5 h-5 ml-2" />
               دخول للمنصة
             </Button>
-          </form>
+          </div>
         </Card>
-
-        {/* Footer note */}
-        <p className="mt-8 text-sm text-muted-foreground animate-in fade-in duration-700 delay-700">
-          مفتاح API الخاص بك محفوظ بأمان في جلستك الحالية فقط
-        </p>
       </div>
     </div>
   );

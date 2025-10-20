@@ -34,28 +34,48 @@ serve(async (req) => {
   }
 
   try {
-    const { message, conversationHistory, projectState } = await req.json();
-    
-    // Initialize Supabase client
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } }
+    });
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const { message, conversationHistory, projectState } = await req.json();
     
     const GOOGLE_GEMINI_API_KEY = Deno.env.get('GOOGLE_GEMINI_API_KEY');
     if (!GOOGLE_GEMINI_API_KEY) {
       throw new Error('GOOGLE_GEMINI_API_KEY is not configured');
     }
 
-    console.log('Received message:', message);
+    console.log('Received message:', message, 'from user:', user.id);
 
-    // Load or create project state
+    // Load or create project state using service role for admin operations
+    const supabaseServiceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRole);
+
     let currentProjectState = projectState;
     if (!currentProjectState) {
-      const { data: existingState } = await supabase
+      const { data: existingState } = await supabaseAdmin
         .from('project_states')
         .select('*')
-        .eq('project_id', 'default')
-        .single();
+        .eq('user_id', user.id)
+        .maybeSingle();
       
       currentProjectState = existingState || {
         file_structure: [],
